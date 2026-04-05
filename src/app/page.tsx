@@ -1,9 +1,8 @@
 'use client';
 
 import React, { useState, useRef } from 'react';
-import { motion, AnimatePresence, Reorder, useDragControls } from 'framer-motion';
+import { AnimatePresence, Reorder, useDragControls } from 'framer-motion';
 import { 
-  Plus, 
   Trash2, 
   FileDown, 
   Layout, 
@@ -12,7 +11,6 @@ import {
   PlusCircle,
   Calendar, 
   Minus,
-  FileText,
   Columns2,
   Columns3,
   UploadCloud,
@@ -21,12 +19,6 @@ import {
   ChevronUp,
   ChevronDown
 } from 'lucide-react';
-import html2canvas from 'html2canvas';
-import { jsPDF } from 'jspdf';
-import * as pdfjs from 'pdfjs-dist';
-
-// Configurando o worker do PDF.js (offline)
-pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
 
 type FieldType = 'title' | 'text' | 'number' | 'date' | 'divider' | 'line' | 'grid-2' | 'grid-3';
 
@@ -63,7 +55,7 @@ export default function Home() {
     if (type === 'title') defaultSize = 32;
     if (type === 'divider') defaultSize = 12;
 
-    let newField: FormField = {
+    const newField: FormField = {
       id: Math.random().toString(36).substr(2, 9),
       type,
       label: type === 'title' ? 'TÍTULO' : 'CAMPO',
@@ -100,6 +92,8 @@ export default function Home() {
 
     setIsProcessing(true);
     try {
+      const pdfjs = await import('pdfjs-dist') as any; // eslint-disable-line @typescript-eslint/no-explicit-any
+      pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
       const reader = new FileReader();
       reader.onload = async (ev) => {
         const typedarray = new Uint8Array(ev.target?.result as ArrayBuffer);
@@ -109,7 +103,7 @@ export default function Home() {
         for (let i = 1; i <= pdf.numPages; i++) {
           const page = await pdf.getPage(i);
           const content = await page.getTextContent();
-          fullText += content.items.map((item: any) => item.str).join(" ");
+          fullText += content.items.map((item: unknown) => (item as { str: string }).str).join(" ");
         }
 
         const extractedFields: FormField[] = [
@@ -128,6 +122,7 @@ export default function Home() {
       };
       reader.readAsArrayBuffer(file);
     } catch (err) {
+      console.error("Erro ao ler PDF:", err);
       alert("Erro ao ler PDF.");
     } finally {
       setIsProcessing(false);
@@ -140,6 +135,11 @@ export default function Home() {
     
     setTimeout(async () => {
       try {
+        const [html2canvas, { jsPDF }] = await Promise.all([
+          import('html2canvas').then(m => (m.default || m) as any), // eslint-disable-line @typescript-eslint/no-explicit-any
+          import('jspdf') as Promise<any> // eslint-disable-line @typescript-eslint/no-explicit-any
+        ]);
+
         const element = pdfRef.current!;
         const canvas = await html2canvas(element, {
           scale: 2,
@@ -148,7 +148,7 @@ export default function Home() {
           backgroundColor: '#ffffff',
           width: 794,
           windowWidth: 794,
-          onclone: (clonedDoc) => {
+          onclone: (clonedDoc: Document) => {
             const container = clonedDoc.getElementById('pdf-content');
             if (container) {
               container.style.boxShadow = 'none';
@@ -158,10 +158,11 @@ export default function Home() {
             }
 
             const allElements = clonedDoc.querySelectorAll('*');
-            allElements.forEach((el: any) => {
-              el.style.transform = 'none';
-              el.style.transition = 'none';
-              el.style.animation = 'none';
+            allElements.forEach((el) => {
+              const htmlEl = el as HTMLElement;
+              htmlEl.style.transform = 'none';
+              htmlEl.style.transition = 'none';
+              htmlEl.style.animation = 'none';
             });
           }
         });
@@ -301,7 +302,13 @@ export default function Home() {
   );
 }
 
-function Item({ field, isPreview, updateField, updateColumn, removeField }: any) {
+function Item({ field, isPreview, updateField, updateColumn, removeField }: {
+  field: FormField;
+  isPreview: boolean;
+  updateField: (id: string, updates: Partial<FormField>) => void;
+  updateColumn: (id: string, colIndex: number, updates: Partial<Column>) => void;
+  removeField: (id: string) => void;
+}) {
   const dragControls = useDragControls();
 
   const handleFontSize = (delta: number) => {
@@ -498,7 +505,11 @@ function Item({ field, isPreview, updateField, updateColumn, removeField }: any)
   );
 }
 
-function ToolButton({ icon, label, onClick }: any) {
+function ToolButton({ icon, label, onClick }: {
+  icon: React.ReactNode;
+  label: string;
+  onClick: () => void;
+}) {
   return (
     <button 
       onClick={onClick}
